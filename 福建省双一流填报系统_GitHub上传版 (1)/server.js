@@ -28,6 +28,17 @@ function ownersFor(ind, discipline) {
   return (ind.owner_by_discipline && ind.owner_by_discipline[discipline]) || ind.owner_list || [];
 }
 
+// multer/busboy decodes multipart filenames as latin1 by default, which corrupts
+// any UTF-8 (e.g. Chinese) filename. Re-interpret the raw bytes as UTF-8 to fix it.
+function fixFilenameEncoding(name) {
+  if (!name) return name;
+  try {
+    return Buffer.from(name, "latin1").toString("utf8");
+  } catch (e) {
+    return name;
+  }
+}
+
 function leadersFor(ind) {
   if (!ind.leader) return [];
   return String(ind.leader).replace(/\u3000/g, " ").split(/\s+/).filter(Boolean);
@@ -170,11 +181,12 @@ app.post(
     );
 
     (req.files || []).forEach((f) => {
+      const fixedName = fixFilenameEncoding(f.originalname);
       const info = insertStmt.run(
         discipline,
         indicatorId,
         kind,
-        f.originalname,
+        fixedName,
         f.filename,
         f.size,
         f.mimetype,
@@ -182,7 +194,7 @@ app.post(
       );
       inserted.push({
         id: info.lastInsertRowid,
-        name: f.originalname,
+        name: fixedName,
         size: f.size,
         type: f.mimetype,
         uploadedBy: person,
