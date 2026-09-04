@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2025年福建省"双一流"建设监测数据 在线填报系统</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #f4f6fa; }
+  body { font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  #root { min-height: 100vh; }
+  a { color: inherit; }
+  button { font-family: inherit; }
+  input, textarea { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="padding:60px;text-align:center;color:#8a94a6;font-family:sans-serif;">正在加载系统...</div>
+</div>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+<script>
+Babel.registerPreset('react-classic', {
+  presets: [[Babel.availablePresets['react'], { runtime: 'classic' }]]
+});
+</script>
+
+<script type="text/babel" data-presets="react-classic">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ============================== DATA ============================== */
+const DISCIPLINES = [
+  { id: "chem", name: "化学学科" },
+  { id: "chem_eng", name: "化工学科" },
+];
+
+const DEADLINE = new Date("2026-09-11T23:59:59+08:00");
+const API = ""; // same-origin
+
+/* ============================== HELPERS ============================== */
+
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+function formatCountdown(now) {
+  const diff = DEADLINE.getTime() - now.getTime();
+  if (diff <= 0) return { expired: true, d: 0, h: 0, m: 0, s: 0 };
+  const s = Math.floor(diff / 1000) % 60;
+  const m = Math.floor(diff / (1000 * 60)) % 60;
+  const h = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+  return { expired: false, d, h, m, s };
+}
+
+function ownersFor(ind, discipline) {
+  return (ind.owner_by_discipline && ind.owner_by_discipline[discipline]) || ind.owner_list || [];
+}
+
+function hasListItem(ind) {
+  return ind.items.some((it) => it.is_list);
+}
+
+function humanFileSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+/* ============================== API CLIENT ============================== */
+
+async function apiGetIndicators() {
+  const r = await fetch(`${API}/api/indicators`);
+  if (!r.ok) throw new Error("failed to load indicators");
+  return r.json();
+}
+
+async function apiGetPeople(discipline) {
+  const r = await fetch(`${API}/api/people/${discipline}`);
+  if (!r.ok) throw new Error("failed to load people");
+  return r.json();
+}
+
+async function apiGetState(discipline) {
+  const r = await fetch(`${API}/api/state/${discipline}`);
+  if (!r.ok) throw new Error("failed to load state");
+  return r.json();
+}
+
+async function apiGetProgress(discipline) {
+  const r = await fetch(`${API}/api/progress/${discipline}`);
+  if (!r.ok) throw new Error("failed to load progress");
+  return r.json();
+}
+
+async function apiSaveField(discipline, indicatorId, itemIdx, value, person) {
+  const r = await fetch(`${API}/api/field/${discipline}/${indicatorId}/${itemIdx}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value, person }),
+  });
+  if (!r.ok) throw new Error("failed to save field");
+  return r.json();
+}
+
+async function apiUploadFiles(discipline, indicatorId, kind, fileList, person) {
+  const form = new FormData();
+  Array.from(fileList).forEach((f) => form.append("files", f));
+  form.append("person", person || "");
+  const r = await fetch(`${API}/api/upload/${discipline}/${indicatorId}/${kind}`, {
+    method: "POST",
+    body: form,
+  });
+  if (!r.ok) throw new Error("upload failed");
+  return r.json();
+}
+
+async function apiDeleteFile(fileId) {
+  const r = await fetch(`${API}/api/file/${fileId}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("delete failed");
+  return r.json();
+}
+
+function exportUrl(discipline) {
+  return `${API}/api/export/${discipline}`;
+}
+
+/* ============================== APP-WIDE DATA HOOK ============================== */
+
+function useIndicators() {
+  const [indicators, setIndicators] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGetIndicators()
+      .then((data) => {
+        if (!cancelled) setIndicators(data.indicators);
+      })
+      .catch((e) => {
+        if (!cancelled) setError("无法连接到服务器，请检查网络或稍后重试");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { indicators, error };
+}
+
+/* ============================== DISCIPLINE STATE (fields + files, polled) ============================== */
+
+function useDisciplineState(discipline) {
+  const [fields, setFields] = useState({});
+  const [evidence, setEvidence] = useState({});
+  const [listFiles, setListFiles] = useState({});
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(null);
+
+  const reload = useCallback(async () => {
+    if (!discipline) return;
+    try {
+      const data = await apiGetState(discipline);
+      setFields(data.fields || {});
+      setEvidence(data.evidence || {});
+      setListFiles(data.listFiles || {});
+      setLoaded(true);
+      setError(null);
+    } catch (e) {
+      setError("加载数据失败，请检查网络连接");
+      setLoaded(true);
+    }
+  }, [discipline]);
+
+  useEffect(() => {
+    setLoaded(false);
+    reload();
+    // Poll periodically so multiple people online at once see each other's updates.
+    const t = setInterval(reload, 8000);
+    return () => clearInterval(t);
+  }, [discipline, reload]);
+
+  return { fields, evidence, listFiles, loaded, error, reload };
+}
+
+/* ============================== PROGRESS CALC (client-side mirror of server logic) ============================== */
+
+function computeIndicatorStatus(ind, fields, evidence, listFiles) {
+  const textItems = ind.items.filter((it) => !it.is_list);
+  let textDone = 0;
+  textItems.forEach((it) => {
+    const idx = ind.items.indexOf(it);
+    const val = fields[`${ind.id}:${idx}`];
+    if (typeof val === "string" && val.trim().length > 0) textDone += 1;
+  });
+  const needsList = hasListItem(ind);
+  const lFiles = needsList ? listFiles[ind.id] || [] : [];
+  const listDone = !needsList || lFiles.length > 0;
+  const eFiles = evidence[ind.id] || [];
+  const evidenceDone = eFiles.length > 0;
+
+  const total = textItems.length + (needsList ? 1 : 0) + 1;
+  const done = textDone + (needsList ? (listDone ? 1 : 0) : 0) + (evidenceDone ? 1 : 0);
+
+  return { done, total, textDone, textTotal: textItems.length, listDone, needsList, evidenceDone };
+}
+
+function computePersonProgress(indicators, person, discipline, fields, evidence, listFiles) {
+  const inds = indicators.filter((ind) => ownersFor(ind, discipline).includes(person));
+  let done = 0;
+  let total = 0;
+  inds.forEach((ind) => {
+    const s = computeIndicatorStatus(ind, fields, evidence, listFiles);
+    done += s.done;
+    total += s.total;
+  });
+  return { done, total, indicatorCount: inds.length };
+}
+
+/* ============================== UI: NOTICE + DEADLINE BANNERS ============================== */
+
+function DataScopeNotice() {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div
+      style={{
+        background: "#fff8e6",
+        borderBottom: "2px solid #e8b93a",
+        padding: "12px 20px",
+        fontFamily: "'Noto Sans SC', 'PingFang SC', sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 980,
+          margin: "0 auto",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+        }}
+      >
+        <span style={{ fontSize: 18, flexShrink: 0, lineHeight: "22px" }}>📌</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            onClick={() => setExpanded((e) => !e)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#8a5a00" }}>
+              填报数据口径说明
+            </span>
+            <span style={{ fontSize: 12, color: "#a67c00" }}>
+              {expanded ? "收起 ▲" : "展开 ▼"}
+            </span>
+          </div>
+          {expanded && (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 13,
+                lineHeight: 1.9,
+                color: "#5c4400",
+              }}
+            >
+              <div>
+                本次填报的数据起止时间为<b>2025年1月—2026年8月31日</b>。
+              </div>
+              <div>
+                涉及<b>办学成效增量数据</b>的指标，填报 2025年1月—2026年8月31日的<b>期间数据</b>；
+              </div>
+              <div>
+                涉及<b>办学状态数据</b>的指标，填报 2026年8月31日的<b>即时数据</b>；
+              </div>
+              <div>
+                涉及<b>科研经费</b>相关的指标，填报 <b>2025年度实际经费</b>。
+              </div>
+              <div>
+                省双一流分<b>化学学科、化工学科</b>填报数据。
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeadlineBanner() {
+  const now = useNow(1000);
+  const cd = formatCountdown(now);
+  const urgent = !cd.expired && cd.d <= 3;
+
+  return (
+    <div
+      style={{
+        background: cd.expired
+          ? "linear-gradient(90deg,#7a1f1f,#4a1010)"
+          : urgent
+          ? "linear-gradient(90deg,#8a1f1f,#c23b22)"
+          : "linear-gradient(90deg,#1f3a5f,#173056)",
+        color: "#fff",
+        padding: "14px 20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        flexWrap: "wrap",
+        fontFamily: "'Noto Sans SC', 'PingFang SC', sans-serif",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.5 }}>
+        {cd.expired ? "⚠ 填报已截止" : "填报截止时间：2026年9月11日 24:00"}
+      </div>
+      {!cd.expired && (
+        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+          {[
+            { v: cd.d, label: "天" },
+            { v: cd.h, label: "时" },
+            { v: cd.m, label: "分" },
+            { v: cd.s, label: "秒" },
+          ].map((x, i) => (
+            <span
+              key={i}
+              style={{
+                display: "inline-flex",
+                alignItems: "baseline",
+                gap: 3,
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 6,
+                padding: "3px 8px",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              <b style={{ fontSize: 18 }}>{String(x.v).padStart(2, "0")}</b>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>{x.label}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const backBtnStyle = {
+  background: "#fff",
+  border: "1px solid #d7dce5",
+  borderRadius: 8,
+  padding: "8px 14px",
+  fontSize: 13,
+  cursor: "pointer",
+  color: "#3a4358",
+};
+
+/* ============================== UI: DISCIPLINE SELECT ============================== */
+
+function DisciplineSelect({ onSelect }) {
+  return (
+    <div
+      style={{
+        maxWidth: 640,
+        margin: "80px auto",
+        padding: "0 20px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
+        <div style={{ fontSize: 13, letterSpacing: 3, color: "#8a94a6", marginBottom: 8 }}>
+          2025年福建省"双一流"建设监测数据
+        </div>
+        <h1 style={{ fontSize: 30, margin: 0, color: "#1a2540", fontWeight: 800 }}>
+          在线填报系统
+        </h1>
+        <p style={{ color: "#5c6b82", marginTop: 10, fontSize: 14 }}>请选择所属学科</p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {DISCIPLINES.map((d) => (
+          <button
+            key={d.id}
+            onClick={() => onSelect(d.id)}
+            style={{
+              padding: "36px 20px",
+              borderRadius: 16,
+              border: "1px solid #e1e5ec",
+              background: "#fff",
+              cursor: "pointer",
+              textAlign: "center",
+              transition: "all .15s",
+              boxShadow: "0 1px 3px rgba(20,30,50,0.05)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#2f5fd9";
+              e.currentTarget.style.boxShadow = "0 6px 20px rgba(47,95,217,0.18)";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#e1e5ec";
+              e.currentTarget.style.boxShadow = "0 1px 3px rgba(20,30,50,0.05)";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#1a2540" }}>{d.name}</div>
+            <div style={{ fontSize: 12.5, color: "#8a94a6", marginTop: 8 }}>进入填报入口 →</div>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 28 }}>
+        <button
+          onClick={() => onSelect("__LEADER__")}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#2f5fd9",
+            fontSize: 13,
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          我是分管领导 · 查看分管指标进度 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== UI: PERSON SELECT ============================== */
+
+function PersonSelect({ indicators, discipline, onSelect, onBackDiscipline }) {
+  const [people, setPeople] = useState([]);
+  const [query, setQuery] = useState("");
+  const disciplineName = DISCIPLINES.find((d) => d.id === discipline)?.name || "";
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGetPeople(discipline).then((data) => {
+      if (!cancelled) setPeople(data.people || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [discipline]);
+
+  const filtered = people.filter((p) => p.includes(query));
+
+  return (
+    <div
+      style={{
+        maxWidth: 720,
+        margin: "40px auto",
+        padding: "0 20px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={onBackDiscipline} style={backBtnStyle}>
+          ← 切换学科
+        </button>
+      </div>
+
+      <div style={{ textAlign: "center", marginBottom: 36 }}>
+        <div
+          style={{
+            display: "inline-block",
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: "#2f5fd9",
+            background: "#eaf0ff",
+            borderRadius: 20,
+            padding: "4px 14px",
+            marginBottom: 12,
+          }}
+        >
+          {disciplineName}
+        </div>
+        <h1 style={{ fontSize: 26, margin: 0, color: "#1a2540", fontWeight: 800 }}>
+          请选择您的姓名
+        </h1>
+        <p style={{ color: "#5c6b82", marginTop: 10, fontSize: 14 }}>进入对应的填报任务</p>
+      </div>
+
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="搜索姓名..."
+        style={{
+          width: "100%",
+          padding: "12px 16px",
+          fontSize: 15,
+          borderRadius: 10,
+          border: "1px solid #d7dce5",
+          marginBottom: 16,
+          boxSizing: "border-box",
+          outline: "none",
+        }}
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+          gap: 12,
+        }}
+      >
+        {filtered.map((p) => {
+          const inds = indicators.filter((i) => ownersFor(i, discipline).includes(p));
+          return (
+            <button
+              key={p}
+              onClick={() => onSelect(p)}
+              style={{
+                padding: "16px 14px",
+                borderRadius: 12,
+                border: "1px solid #e1e5ec",
+                background: "#fff",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all .15s",
+                boxShadow: "0 1px 2px rgba(20,30,50,0.04)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "#2f5fd9";
+                e.currentTarget.style.boxShadow = "0 4px 14px rgba(47,95,217,0.15)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "#e1e5ec";
+                e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,30,50,0.04)";
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#1a2540" }}>{p}</div>
+              <div style={{ fontSize: 12, color: "#8a94a6", marginTop: 4 }}>
+                负责 {inds.length} 项指标
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 28 }}>
+        <button
+          onClick={() => onSelect("__ADMIN__")}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#2f5fd9",
+            fontSize: 13,
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          我是收集人 · 查看总进度与导出材料 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== UI: PROGRESS DASHBOARD (+ export) ============================== */
+
+function ProgressDashboard({ indicators, discipline, onBack, onSelectPerson }) {
+  const [progress, setProgress] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const disciplineName = DISCIPLINES.find((d) => d.id === discipline)?.name || "";
+
+  const reload = useCallback(() => {
+    apiGetProgress(discipline).then(setProgress);
+    apiGetPeople(discipline).then((d) => setPeople(d.people || []));
+  }, [discipline]);
+
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 6000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  if (!progress) {
+    return <div style={{ padding: 60, textAlign: "center" }}>加载进度中...</div>;
+  }
+
+  const overallPct = progress.overall.total
+    ? Math.round((progress.overall.done / progress.overall.total) * 100)
+    : 0;
+
+  const perPersonList = people
+    .map((p) => ({ person: p, ...(progress.perPerson[p] || { done: 0, total: 0, indicatorCount: 0 }) }))
+    .sort((a, b) => {
+      const ra = a.total ? a.done / a.total : 0;
+      const rb = b.total ? b.done / b.total : 0;
+      return ra - rb;
+    });
+
+  const handleExport = () => {
+    setExporting(true);
+    const a = document.createElement("a");
+    a.href = exportUrl(discipline);
+    a.click();
+    setTimeout(() => setExporting(false), 1500);
+  };
+
+  return (
+    <div
+      style={{
+        maxWidth: 980,
+        margin: "0 auto",
+        padding: "32px 20px 60px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 24,
+          flexWrap: "wrap",
+          gap: 10,
+        }}
+      >
+        <button onClick={onBack} style={backBtnStyle}>
+          ← 返回
+        </button>
+        <h2 style={{ margin: 0, fontSize: 20, color: "#1a2540" }}>
+          {disciplineName} · 填报总进度
+        </h2>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          style={{
+            background: "#1a8a4a",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 18px",
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: exporting ? "default" : "pointer",
+            opacity: exporting ? 0.7 : 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {exporting ? "正在打包..." : "⬇ 导出全部材料（按指标分类打包）"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid #e6e9ef",
+          borderRadius: 14,
+          padding: "24px 28px",
+          marginBottom: 24,
+          boxShadow: "0 1px 3px rgba(20,30,50,0.04)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#5c6b82" }}>总体完成情况</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: "#1a2540" }}>
+            {overallPct}%
+            <span style={{ fontSize: 13, fontWeight: 400, color: "#8a94a6", marginLeft: 8 }}>
+              {progress.overall.done} / {progress.overall.total} 项已完成
+            </span>
+          </div>
+        </div>
+        <ProgressBar pct={overallPct} height={12} />
+      </div>
+
+      <div style={{ fontSize: 14, color: "#5c6b82", marginBottom: 12, fontWeight: 600 }}>
+        按负责人查看
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {perPersonList.map(({ person, done, total, indicatorCount }) => {
+          const pct = total ? Math.round((done / total) * 100) : 0;
+          return (
+            <button
+              key={person}
+              onClick={() => onSelectPerson(person)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 16,
+                background: "#fff",
+                border: "1px solid #e6e9ef",
+                borderRadius: 12,
+                padding: "14px 18px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ width: 90, fontWeight: 700, color: "#1a2540", flexShrink: 0 }}>
+                {person}
+              </div>
+              <div style={{ flex: 1 }}>
+                <ProgressBar pct={pct} height={8} />
+              </div>
+              <div
+                style={{
+                  width: 130,
+                  textAlign: "right",
+                  fontSize: 13,
+                  color: pct === 100 ? "#1a8a4a" : "#5c6b82",
+                  flexShrink: 0,
+                }}
+              >
+                {done}/{total} · {pct}%
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ pct, height = 8 }) {
+  const color = pct === 100 ? "#1a8a4a" : pct >= 50 ? "#2f5fd9" : "#e8a13a";
+  return (
+    <div style={{ width: "100%", height, background: "#eef1f5", borderRadius: height, overflow: "hidden" }}>
+      <div
+        style={{
+          width: `${pct}%`,
+          height: "100%",
+          background: color,
+          transition: "width .3s ease",
+          borderRadius: height,
+        }}
+      />
+    </div>
+  );
+}
+
+/* ============================== UI: LEADER SELECT ============================== */
+
+function LeaderSelect({ onSelect, onBack }) {
+  const [leaders, setLeaders] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API}/api/leaders`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setLeaders(data.leaders || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div
+      style={{
+        maxWidth: 640,
+        margin: "60px auto",
+        padding: "0 20px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={onBack} style={backBtnStyle}>
+          ← 返回
+        </button>
+      </div>
+
+      <div style={{ textAlign: "center", marginBottom: 36 }}>
+        <h1 style={{ fontSize: 26, margin: 0, color: "#1a2540", fontWeight: 800 }}>
+          请选择您的姓名
+        </h1>
+        <p style={{ color: "#5c6b82", marginTop: 10, fontSize: 14 }}>
+          查看您分管指标的填报进度（化学、化工两个学科合并展示）
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
+        {leaders.map((l) => (
+          <button
+            key={l}
+            onClick={() => onSelect(l)}
+            style={{
+              padding: "18px 14px",
+              borderRadius: 12,
+              border: "1px solid #e1e5ec",
+              background: "#fff",
+              cursor: "pointer",
+              textAlign: "center",
+              fontWeight: 700,
+              fontSize: 16,
+              color: "#1a2540",
+              boxShadow: "0 1px 2px rgba(20,30,50,0.04)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#2f5fd9";
+              e.currentTarget.style.boxShadow = "0 4px 14px rgba(47,95,217,0.15)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#e1e5ec";
+              e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,30,50,0.04)";
+            }}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== UI: LEADER DASHBOARD (read-only) ============================== */
+
+function LeaderDashboard({ leader, onBack }) {
+  const [data, setData] = useState(null);
+  const [expandedDiscipline, setExpandedDiscipline] = useState("chem");
+
+  const reload = useCallback(() => {
+    fetch(`${API}/api/leader-view/${encodeURIComponent(leader)}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {});
+  }, [leader]);
+
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 8000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  if (!data) {
+    return <div style={{ padding: 60, textAlign: "center" }}>加载中...</div>;
+  }
+
+  const overallPct = data.overall.total ? Math.round((data.overall.done / data.overall.total) * 100) : 0;
+
+  return (
+    <div
+      style={{
+        maxWidth: 980,
+        margin: "0 auto",
+        padding: "32px 20px 60px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <button onClick={onBack} style={backBtnStyle}>
+          ← 切换领导
+        </button>
+        <h2 style={{ margin: 0, fontSize: 20, color: "#1a2540" }}>{leader} · 分管指标进度</h2>
+        <div style={{ width: 60 }} />
+      </div>
+
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1f3a5f,#2f5fd9)",
+          borderRadius: 16,
+          padding: "22px 26px",
+          color: "#fff",
+          marginBottom: 24,
+        }}
+      >
+        <div style={{ fontSize: 13, opacity: 0.85 }}>两学科合计完成情况（只读视图，不可编辑）</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 6 }}>
+          <div style={{ fontSize: 30, fontWeight: 800 }}>{overallPct}%</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>
+            {data.overall.done} / {data.overall.total} 项已完成
+          </div>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <div style={{ height: 8, background: "rgba(255,255,255,0.25)", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ width: `${overallPct}%`, height: "100%", background: "#fff", borderRadius: 8 }} />
+          </div>
+        </div>
+      </div>
+
+      {DISCIPLINES.map((d) => {
+        const disc = data.disciplines[d.id];
+        if (!disc) return null;
+        const pct = disc.overall.total ? Math.round((disc.overall.done / disc.overall.total) * 100) : 0;
+        const isOpen = expandedDiscipline === d.id;
+        const personList = Object.entries(disc.byPerson).sort((a, b) => {
+          const ra = a[1].total ? a[1].done / a[1].total : 0;
+          const rb = b[1].total ? b[1].done / b[1].total : 0;
+          return ra - rb;
+        });
+
+        return (
+          <div
+            key={d.id}
+            style={{
+              background: "#fff",
+              border: "1px solid #e6e9ef",
+              borderRadius: 14,
+              marginBottom: 16,
+              overflow: "hidden",
+              boxShadow: "0 1px 3px rgba(20,30,50,0.04)",
+            }}
+          >
+            <div
+              onClick={() => setExpandedDiscipline(isOpen ? null : d.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "16px 20px",
+                cursor: "pointer",
+                background: pct === 100 ? "#f4faf6" : "#fff",
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#1a2540" }}>{disc.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 12, color: pct === 100 ? "#1a8a4a" : "#5c6b82" }}>
+                    {disc.overall.done}/{disc.overall.total} · {pct}%
+                  </div>
+                  <div style={{ width: 100, marginTop: 3 }}>
+                    <ProgressBar pct={pct} height={6} />
+                  </div>
+                </div>
+                <span style={{ fontSize: 13, color: "#8a94a6" }}>{isOpen ? "▲" : "▼"}</span>
+              </div>
+            </div>
+
+            {isOpen && (
+              <div style={{ padding: "0 20px 20px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#5c6b82", margin: "10px 0" }}>
+                  按负责人查看
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                  {personList.map(([person, stat]) => {
+                    const ppct = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
+                    return (
+                      <div
+                        key={person}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 14,
+                          background: "#f7f9fc",
+                          border: "1px solid #eceff3",
+                          borderRadius: 10,
+                          padding: "10px 14px",
+                        }}
+                      >
+                        <div style={{ width: 80, fontWeight: 700, color: "#1a2540", fontSize: 13.5, flexShrink: 0 }}>
+                          {person}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <ProgressBar pct={ppct} height={7} />
+                        </div>
+                        <div
+                          style={{
+                            width: 110,
+                            textAlign: "right",
+                            fontSize: 12.5,
+                            color: ppct === 100 ? "#1a8a4a" : "#5c6b82",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {stat.done}/{stat.total} · {ppct}%
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#5c6b82", margin: "10px 0" }}>
+                  按指标查看
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {disc.byIndicator.map((ind) => {
+                    const ipct = ind.total ? Math.round((ind.done / ind.total) * 100) : 0;
+                    return (
+                      <div
+                        key={ind.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "8px 4px",
+                          borderBottom: "1px solid #f0f2f6",
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <div style={{ flex: 1, color: "#2c374d" }}>
+                          <div style={{ color: "#a3adbd", fontSize: 11 }}>
+                            {ind.l1} · {ind.l2}
+                          </div>
+                          {ind.l3}
+                        </div>
+                        <div style={{ color: "#8a94a6", flexShrink: 0 }}>{ind.owners.join("、") || "—"}</div>
+                        <div
+                          style={{
+                            width: 70,
+                            textAlign: "right",
+                            color: ipct === 100 ? "#1a8a4a" : "#5c6b82",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {ind.done}/{ind.total}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================== UI: FILE UPLOAD BOX ============================== */
+
+function FileUploadBox({ discipline, indicatorId, kind, files, person, onChanged, label }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const list = files || [];
+
+  const handleFiles = async (fileList) => {
+    if (!fileList.length) return;
+    setUploading(true);
+    try {
+      await apiUploadFiles(discipline, indicatorId, kind, fileList, person);
+      onChanged();
+    } catch (e) {
+      alert("上传失败，请检查网络后重试");
+    }
+    setUploading(false);
+  };
+
+  const removeFile = async (fileId) => {
+    if (!confirm("确定删除该文件吗？")) return;
+    try {
+      await apiDeleteFile(fileId);
+      onChanged();
+    } catch (e) {
+      alert("删除失败，请重试");
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      {list.map((f) => (
+        <div
+          key={f.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "#f7f9fc",
+            border: "1px solid #e6e9ef",
+            borderRadius: 8,
+            padding: "8px 12px",
+            marginBottom: 6,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ fontSize: 15 }}>📎</span>
+          <a
+            href={f.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "#2f5fd9", flex: 1, textDecoration: "none", wordBreak: "break-all" }}
+          >
+            {f.name}
+          </a>
+          {f.uploadedBy && (
+            <span style={{ color: "#a3adbd", fontSize: 11.5, flexShrink: 0 }}>{f.uploadedBy} 上传</span>
+          )}
+          <span style={{ color: "#8a94a6", fontSize: 12, flexShrink: 0 }}>{humanFileSize(f.size)}</span>
+          <button
+            onClick={() => removeFile(f.id)}
+            style={{
+              border: "none",
+              background: "none",
+              color: "#c23b3b",
+              cursor: "pointer",
+              fontSize: 13,
+              flexShrink: 0,
+            }}
+          >
+            删除
+          </button>
+        </div>
+      ))}
+
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+        }}
+        onClick={() => inputRef.current && inputRef.current.click()}
+        style={{
+          border: "1.5px dashed #c7cedb",
+          borderRadius: 8,
+          padding: "10px 14px",
+          textAlign: "center",
+          fontSize: 12.5,
+          color: "#8a94a6",
+          cursor: "pointer",
+          background: "#fafbfc",
+        }}
+      >
+        {uploading ? "上传中..." : label}
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files.length) handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ============================== UI: TEXT FIELD (debounced save) ============================== */
+
+function TextField({ discipline, indicatorId, itemIdx, value, person, onSaved, placeholder }) {
+  const [local, setLocal] = useState(value || "");
+  const [saving, setSaving] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    setLocal(value || "");
+  }, [value]);
+
+  const scheduleSave = (val) => {
+    setLocal(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await apiSaveField(discipline, indicatorId, itemIdx, val, person);
+        onSaved();
+      } catch (e) {
+        // silently retry on next keystroke; avoid noisy alerts while typing
+      }
+      setSaving(false);
+    }, 700);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <textarea
+        value={local}
+        onChange={(e) => scheduleSave(e.target.value)}
+        placeholder={placeholder || "请填写..."}
+        rows={2}
+        style={{
+          width: "100%",
+          border: "1px solid #dde2ea",
+          borderRadius: 8,
+          padding: "8px 12px",
+          fontSize: 13.5,
+          fontFamily: "inherit",
+          boxSizing: "border-box",
+          resize: "vertical",
+          outline: "none",
+        }}
+      />
+      {saving && (
+        <span style={{ position: "absolute", right: 8, top: 8, fontSize: 11, color: "#a3adbd" }}>
+          保存中...
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ============================== UI: INDICATOR CARD ============================== */
+
+function IndicatorCard({ ind, discipline, person, state, onChanged }) {
+  const { fields, evidence, listFiles } = state;
+  const [expanded, setExpanded] = useState(true);
+  const [showDesc, setShowDesc] = useState(false);
+
+  const status = computeIndicatorStatus(ind, fields, evidence, listFiles);
+  const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
+
+  const listItem = ind.items.find((it) => it.is_list);
+  const textItems = ind.items.filter((it) => !it.is_list);
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e6e9ef",
+        borderRadius: 14,
+        marginBottom: 16,
+        overflow: "hidden",
+        boxShadow: "0 1px 3px rgba(20,30,50,0.04)",
+      }}
+    >
+      <div
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          cursor: "pointer",
+          background: pct === 100 ? "#f4faf6" : "#fff",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: "#8a94a6", marginBottom: 3 }}>
+            {ind.l1} · {ind.l2}
+          </div>
+          <div style={{ fontSize: 15.5, fontWeight: 700, color: "#1a2540" }}>{ind.l3}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 12, color: pct === 100 ? "#1a8a4a" : "#5c6b82" }}>
+              {status.done}/{status.total}
+            </div>
+            <div style={{ width: 70, marginTop: 3 }}>
+              <ProgressBar pct={pct} height={6} />
+            </div>
+          </div>
+          <span style={{ fontSize: 13, color: "#8a94a6" }}>{expanded ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: "0 20px 20px" }}>
+          <div style={{ marginBottom: 14 }}>
+            <button
+              onClick={() => setShowDesc((s) => !s)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#2f5fd9",
+                fontSize: 12.5,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              {showDesc ? "收起填写说明 ▲" : "查看填写说明 ▼"}
+            </button>
+            {showDesc && (
+              <div
+                style={{
+                  marginTop: 8,
+                  background: "#f7f9fc",
+                  border: "1px solid #eceff3",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  fontSize: 12.5,
+                  color: "#5c6b82",
+                  whiteSpace: "pre-wrap",
+                  lineHeight: 1.7,
+                }}
+              >
+                {ind.desc}
+              </div>
+            )}
+          </div>
+
+          {textItems.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 18 }}>
+              {textItems.map((it) => {
+                const realIdx = ind.items.indexOf(it);
+                const val = fields[`${ind.id}:${realIdx}`] || "";
+                const done = val.trim().length > 0;
+                const isTarget = it.item === "当年目标";
+                return (
+                  <div
+                    key={realIdx}
+                    style={{ borderLeft: `3px solid ${done ? "#1a8a4a" : "#e6e9ef"}`, paddingLeft: 14 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 6,
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        color: "#2c374d",
+                      }}
+                    >
+                      {done && <span style={{ color: "#1a8a4a" }}>✓</span>}
+                      {it.item}
+                      {isTarget && (
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            fontWeight: 500,
+                            color: "#a67c00",
+                            background: "#fff3cd",
+                            borderRadius: 4,
+                            padding: "1px 6px",
+                          }}
+                        >
+                          自定
+                        </span>
+                      )}
+                    </div>
+                    <TextField
+                      discipline={discipline}
+                      indicatorId={ind.id}
+                      itemIdx={realIdx}
+                      value={val}
+                      person={person}
+                      onSaved={onChanged}
+                      placeholder={isTarget ? "本项目标由学科自行确定，请填写..." : "请填写..."}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {listItem && (
+            <div
+              style={{
+                borderLeft: `3px solid ${status.listDone ? "#1a8a4a" : "#e6e9ef"}`,
+                paddingLeft: 14,
+                marginBottom: 18,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: "#2c374d",
+                  flexWrap: "wrap",
+                }}
+              >
+                {status.listDone && <span style={{ color: "#1a8a4a" }}>✓</span>}
+                {listItem.item}
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 500,
+                    color: "#2f5fd9",
+                    background: "#eaf0ff",
+                    borderRadius: 4,
+                    padding: "1px 6px",
+                  }}
+                >
+                  清单
+                </span>
+                <a
+                  href={`/templates/${encodeURIComponent(listItem.list_sheet)}.xlsx`}
+                  download
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: "#2f5fd9",
+                    marginLeft: "auto",
+                    textDecoration: "underline",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ⬇ 下载清单模板
+                </a>
+              </div>
+              <FileUploadBox
+                discipline={discipline}
+                indicatorId={ind.id}
+                kind="list"
+                files={listFiles[ind.id] || []}
+                person={person}
+                onChanged={onChanged}
+                label="点击或拖拽上传清单文件（Word / Excel / PDF 等，可上传多个）"
+              />
+            </div>
+          )}
+
+          <div style={{ borderLeft: `3px solid ${status.evidenceDone ? "#1a8a4a" : "#e6e9ef"}`, paddingLeft: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 6,
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: "#2c374d",
+              }}
+            >
+              {status.evidenceDone && <span style={{ color: "#1a8a4a" }}>✓</span>}
+              佐证材料
+            </div>
+            <div style={{ fontSize: 11.5, color: "#8a94a6", marginBottom: 6 }}>
+              可为证书、学院版盖章清单、官方系统导出数据、新闻截图等，无需特意标注类型
+            </div>
+            <FileUploadBox
+              discipline={discipline}
+              indicatorId={ind.id}
+              kind="evidence"
+              files={evidence[ind.id] || []}
+              person={person}
+              onChanged={onChanged}
+              label="点击或拖拽上传佐证材料（Word / PDF 等，可上传多个）"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================== UI: PERSON WORKSPACE ============================== */
+
+function PersonWorkspace({ indicators, person, discipline, onBack }) {
+  const state = useDisciplineState(discipline);
+  const disciplineName = DISCIPLINES.find((d) => d.id === discipline)?.name || "";
+
+  const inds = useMemo(
+    () => indicators.filter((i) => ownersFor(i, discipline).includes(person)),
+    [indicators, person, discipline]
+  );
+
+  const progress = useMemo(
+    () => computePersonProgress(indicators, person, discipline, state.fields, state.evidence, state.listFiles),
+    [indicators, person, discipline, state.fields, state.evidence, state.listFiles]
+  );
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  const grouped = useMemo(() => {
+    const map = new Map();
+    inds.forEach((ind) => {
+      const key = ind.l1;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(ind);
+    });
+    return Array.from(map.entries());
+  }, [inds]);
+
+  if (!state.loaded) {
+    return <div style={{ padding: 60, textAlign: "center" }}>加载中...</div>;
+  }
+
+  return (
+    <div
+      style={{
+        maxWidth: 860,
+        margin: "0 auto",
+        padding: "28px 20px 80px",
+        fontFamily: "'Noto Sans SC','PingFang SC',sans-serif",
+      }}
+    >
+      {state.error && (
+        <div
+          style={{
+            background: "#fff3f3",
+            border: "1px solid #f0c4c4",
+            color: "#a83232",
+            padding: "10px 14px",
+            borderRadius: 8,
+            marginBottom: 16,
+            fontSize: 13,
+          }}
+        >
+          {state.error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <button onClick={onBack} style={backBtnStyle}>
+          ← 切换人员
+        </button>
+      </div>
+
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1f3a5f,#2f5fd9)",
+          borderRadius: 16,
+          padding: "22px 26px",
+          color: "#fff",
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, opacity: 0.8 }}>{disciplineName} · 负责人</div>
+          <div style={{ fontSize: 24, fontWeight: 800 }}>{person}</div>
+          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>
+            共负责 {progress.indicatorCount} 项三级指标
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 30, fontWeight: 800 }}>{pct}%</div>
+          <div style={{ fontSize: 12.5, opacity: 0.85 }}>
+            {progress.done}/{progress.total} 已完成
+          </div>
+          <div style={{ width: 160, marginTop: 6 }}>
+            <div
+              style={{
+                height: 8,
+                background: "rgba(255,255,255,0.25)",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ width: `${pct}%`, height: "100%", background: "#fff", borderRadius: 8 }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {grouped.map(([l1, list]) => (
+        <div key={l1} style={{ marginBottom: 28 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#8a94a6",
+              letterSpacing: 1,
+              marginBottom: 10,
+              paddingLeft: 2,
+            }}
+          >
+            {l1}
+          </div>
+          {list.map((ind) => (
+            <IndicatorCard
+              key={ind.id}
+              ind={ind}
+              discipline={discipline}
+              person={person}
+              state={state}
+              onChanged={state.reload}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================== APP ROOT ============================== */
+
+function App() {
+  const { indicators, error: indicatorsError } = useIndicators();
+  const [discipline, setDiscipline] = useState(null);
+  const [person, setPerson] = useState(null);
+  const [leader, setLeader] = useState(null);
+
+  if (indicatorsError) {
+    return (
+      <div style={{ padding: 60, textAlign: "center", color: "#a83232", fontFamily: "sans-serif" }}>
+        {indicatorsError}
+      </div>
+    );
+  }
+
+  if (!indicators) {
+    return <div style={{ padding: 60, textAlign: "center", color: "#8a94a6" }}>正在连接服务器...</div>;
+  }
+
+  const isLeaderFlow = discipline === "__LEADER__";
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f4f6fa" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 50 }}>
+        <DataScopeNotice />
+        <DeadlineBanner />
+      </div>
+      {!discipline && <DisciplineSelect onSelect={setDiscipline} />}
+
+      {isLeaderFlow && leader === null && (
+        <LeaderSelect
+          onSelect={setLeader}
+          onBack={() => {
+            setDiscipline(null);
+            setLeader(null);
+          }}
+        />
+      )}
+      {isLeaderFlow && leader && (
+        <LeaderDashboard leader={leader} onBack={() => setLeader(null)} />
+      )}
+
+      {discipline && !isLeaderFlow && person === null && (
+        <PersonSelect
+          indicators={indicators}
+          discipline={discipline}
+          onSelect={setPerson}
+          onBackDiscipline={() => {
+            setDiscipline(null);
+            setPerson(null);
+          }}
+        />
+      )}
+      {discipline && !isLeaderFlow && person === "__ADMIN__" && (
+        <ProgressDashboard
+          indicators={indicators}
+          discipline={discipline}
+          onBack={() => setPerson(null)}
+          onSelectPerson={(p) => setPerson(p)}
+        />
+      )}
+      {discipline && !isLeaderFlow && person && person !== "__ADMIN__" && (
+        <PersonWorkspace
+          indicators={indicators}
+          person={person}
+          discipline={discipline}
+          onBack={() => setPerson(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+const rootEl = document.getElementById("root");
+const root = ReactDOM.createRoot(rootEl);
+root.render(<App />);
+
+</script>
+
+</body>
+</html>
