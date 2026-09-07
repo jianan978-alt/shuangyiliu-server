@@ -63,7 +63,7 @@
      "年度",
      "项目类型"
     ],
-    "template_file": "1_1_2-1新增国家级课程思政示范项目数量.xlsx"
+    "template_file": "1.1.2-1新增国家级课程思政示范项目数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -103,7 +103,7 @@
      "项目类型",
      "级别"
     ],
-    "template_file": "1_1_2-2新增省级课程思政示范项目数量.xlsx"
+    "template_file": "1.1.2-2新增省级课程思政示范项目数量.xlsx"
    },
    {
     "item": "省级课程思政示范项目数量",
@@ -159,7 +159,7 @@
      "专业名称",
      "级别"
     ],
-    "template_file": "1_2_1国家级_省级一流本科专业验收通过率.xlsx"
+    "template_file": "1.2.1国家级、省级一流本科专业验收通过率.xlsx"
    },
    {
     "item": "国家级一流本科专业数",
@@ -218,7 +218,7 @@
      "项目负责人",
      "项目类型"
     ],
-    "template_file": "1_2_2新增教育部_四新_项目建设数量.xlsx"
+    "template_file": "1.2.2新增教育部“四新”项目建设数量.xlsx"
    },
    {
     "item": "教育部“四新”项目建设数量",
@@ -267,7 +267,7 @@
      "课程名称",
      "课程类型"
     ],
-    "template_file": "1_3_1新增国家级一流本科课程建设数量.xlsx"
+    "template_file": "1.3.1新增国家级一流本科课程建设数量.xlsx"
    },
    {
     "item": "国家级一流本科课程建设数量",
@@ -311,7 +311,7 @@
      "课程名称",
      "时间"
     ],
-    "template_file": "1_3_2-1新增国家级高等教育智慧平台课程数量.xlsx"
+    "template_file": "1.3.2-1新增国家级高等教育智慧平台课程数量.xlsx"
    },
    {
     "item": "当年目标",
@@ -354,7 +354,7 @@
     "item": "新增省级高等教育智慧平台课程清单",
     "is_list": true,
     "list_sheet": "新增省级高等教育智慧平台课程清单",
-    "template_file": "1_3_2-2新增省级高等教育智慧平台课程数量.xlsx"
+    "template_file": "1.3.2-2新增省级高等教育智慧平台课程数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -388,7 +388,7 @@
      "平台类型",
      "时间"
     ],
-    "template_file": "1_3_3新增国家级教学平台数量.xlsx"
+    "template_file": "1.3.3新增国家级教学平台数量.xlsx"
    },
    {
     "item": "当年目标",
@@ -434,7 +434,7 @@
      "成果名称",
      "奖励等级"
     ],
-    "template_file": "1_3_4新增国家级教学奖励数量.xlsx"
+    "template_file": "1.3.4新增国家级教学奖励数量.xlsx"
    },
    {
     "item": "国家级教学奖励数",
@@ -491,7 +491,7 @@
      "参赛教师团队",
      "获奖等级"
     ],
-    "template_file": "1_3_5新增全国高校教师教学创新大赛获奖数量.xlsx"
+    "template_file": "1.3.5新增全国高校教师教学创新大赛获奖数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -530,7 +530,7 @@
      "项目负责人",
      "赛道"
     ],
-    "template_file": "1_4_1新增中国国际_互联网__大学生创新创业大赛金奖数量.xlsx"
+    "template_file": "1.4.1新增中国国际“互联网+”大学生创新创业大赛金奖数量.xlsx"
    },
    {
     "item": "当年目标",
@@ -922,7 +922,7 @@
      "项目类别（人才类别）",
      "其他补充"
     ],
-    "template_file": "2_2_1新增国家级人才数量.xlsx"
+    "template_file": "2.2.1新增国家级人才数量.xlsx"
    },
    {
     "item": "国家级人才数量",
@@ -979,7 +979,7 @@
      "团队名称",
      "负责人"
     ],
-    "template_file": "2_2_2新增国家级团队数量.xlsx"
+    "template_file": "2.2.2新增国家级团队数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1028,7 +1028,7 @@
      "其他补充",
      "项目名称"
     ],
-    "template_file": "2_2_3新增省级高层次人才数量.xlsx"
+    "template_file": "2.2.3新增省级高层次人才数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1138,7 +1138,7 @@
      "项目名称",
      "项目来源"
     ],
-    "template_file": "3_1_1-2新增国家重大_重点科研项目到账经费.xlsx"
+    "template_file": "3.1.1-2新增国家重大、重点科研项目到账经费.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1235,7 +1235,7 @@
      "到账经费(万元)",
      "项目负责人"
     ],
-    "template_file": "3_1_2-2新增国家自然科学_社会科学_基金项目到账经费.xlsx"
+    "template_file": "3.1.2-2新增国家自然科学（社会科学）基金项目到账经费.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1276,7 +1276,7 @@
      "入选时间",
      "奖励等级"
     ],
-    "template_file": "3_2_1新增国家级奖项数量.xlsx"
+    "template_file": "3.2.1新增国家级奖项数量.xlsx"
    },
    {
     "item": "国家级奖项",
@@ -1322,7 +1322,7 @@
      "入选时间",
      "奖励等级"
     ],
-    "template_file": "3_2_2新增省级奖项数量.xlsx"
+    "template_file": "3.2.2新增省级奖项数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1364,7 +1364,7 @@
      "期刊收录情况",
      "发表年份"
     ],
-    "template_file": "3_3_1新增高水平论文数量.xlsx"
+    "template_file": "3.3.1新增高水平论文数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1404,7 +1404,7 @@
      "出版时间",
      "出版社"
     ],
-    "template_file": "3_3_2新增高水平学术著作数量.xlsx"
+    "template_file": "3.3.2新增高水平学术著作数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1439,7 +1439,7 @@
      "贡献及影响力",
      "教师姓名"
     ],
-    "template_file": "3_3_3新增专利转化数_新品种研发数_新药研发数量.xlsx"
+    "template_file": "3.3.3新增专利转化数、新品种研发数、新药研发数量.xlsx"
    },
    {
     "item": "当年目标",
@@ -1492,7 +1492,7 @@
      "类型",
      "建设经费（万元）"
     ],
-    "template_file": "3_4_1新增国家重大科技创新平台和基地数量指标明细.xlsx"
+    "template_file": "3.4.1新增国家重大科技创新平台和基地数量指标明细.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1540,7 +1540,7 @@
      "主管单位",
      "负责人"
     ],
-    "template_file": "3_4_2新增部省级重点研究基地数量指标明细.xlsx"
+    "template_file": "3.4.2新增部省级重点研究基地数量指标明细.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1586,7 +1586,7 @@
      "采纳情况",
      "成果类型"
     ],
-    "template_file": "3_4_3新增国家级智库建设数量.xlsx"
+    "template_file": "3.4.3新增国家级智库建设数量.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -1730,7 +1730,7 @@
      "当年到账经费（万元）",
      "企事业单位委托经费（万元）"
     ],
-    "template_file": "4_1_1当年到账的横向课题经费.xlsx"
+    "template_file": "4.1.1当年到账的横向课题经费.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -2017,7 +2017,7 @@
      "经费来源",
      "主要成果"
     ],
-    "template_file": "5_1_3-1牵头或参与国际科研平台建设_大科学计划和大科学工程清单.xlsx"
+    "template_file": "5.1.3-1牵头或参与国际科研平台建设、大科学计划和大科学工程清单.xlsx"
    }
   ],
   "owner_by_discipline": {
@@ -2060,7 +2060,7 @@
      "参与学科",
      "参与时间"
     ],
-    "template_file": "5_1_3-2本学科发起成立或加入的国际学术组织与联盟清单.xlsx"
+    "template_file": "5.1.3-2本学科发起成立或加入的国际学术组织与联盟清单.xlsx"
    }
   ],
   "owner_by_discipline": {
