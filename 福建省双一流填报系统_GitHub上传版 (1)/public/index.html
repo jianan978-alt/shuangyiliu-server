@@ -1373,7 +1373,7 @@ function IndicatorCard({ ind, discipline, person, state, onChanged }) {
                   清单
                 </span>
                 <a
-                  href={`/templates/${encodeURIComponent(listItem.list_sheet)}.xlsx`}
+                  href={`/templates/${encodeURIComponent(listItem.template_file || `${listItem.list_sheet}.xlsx`)}`}
                   download
                   style={{
                     fontSize: 11.5,
