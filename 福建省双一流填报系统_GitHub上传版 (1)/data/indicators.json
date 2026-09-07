@@ -346,8 +346,8 @@
    },
    {
     "item": "新增省级高等教育智慧平台课程清单",
-    "is_list": false,
-    "list_sheet": null
+    "is_list": true,
+    "list_sheet": "新增省级高等教育智慧平台课程清单"
    }
   ],
   "owner_by_discipline": {
