@@ -316,57 +316,102 @@ app.get("/api/progress/:discipline", validDiscipline, (req, res) => {
 // broken down by discipline and by the responsible person. Read-only view.
 app.get("/api/leader-view/:leader", (req, res) => {
   const leaderName = req.params.leader;
-  const relevantIndicatorIds = new Set(
-    INDICATORS.filter((ind) => leadersFor(ind).includes(leaderName)).map((ind) => ind.id)
-  );
+  const relevantIndicators = INDICATORS.filter((ind) => leadersFor(ind).includes(leaderName));
 
-  if (relevantIndicatorIds.size === 0) {
-    return res.json({ leader: leaderName, disciplines: {}, overall: { done: 0, total: 0 } });
+  if (relevantIndicators.length === 0) {
+    return res.json({ leader: leaderName, disciplines: {} });
   }
 
-  const result = { leader: leaderName, disciplines: {}, overall: { done: 0, total: 0 } };
+  const result = { leader: leaderName, disciplines: {} };
 
   DISCIPLINES.forEach((discipline) => {
-    const full = computeProgress(discipline);
-    const indicatorsForLeader = INDICATORS.filter((ind) => relevantIndicatorIds.has(ind.id));
+    const fieldRows = db
+      .prepare(`SELECT indicator_id, item_idx, value FROM fields WHERE discipline = ?`)
+      .all(discipline);
+    const fieldMap = {};
+    fieldRows.forEach((r) => {
+      fieldMap[`${r.indicator_id}:${r.item_idx}`] = r.value;
+    });
 
-    let done = 0;
-    let total = 0;
-    const byPerson = {};
-    const byIndicator = [];
+    const fileRows = db
+      .prepare(`SELECT * FROM files WHERE discipline = ?`)
+      .all(discipline);
+    const filesByIndicatorKind = {};
+    fileRows.forEach((r) => {
+      const key = `${r.indicator_id}:${r.kind}`;
+      if (!filesByIndicatorKind[key]) filesByIndicatorKind[key] = [];
+      filesByIndicatorKind[key].push({
+        id: r.id,
+        name: r.original_name,
+        size: r.size_bytes,
+        uploadedBy: r.uploaded_by,
+        uploadedAt: r.uploaded_at,
+        url: `/api/file/${r.id}`,
+      });
+    });
 
-    indicatorsForLeader.forEach((ind) => {
-      const stat = full.perIndicator[ind.id] || { done: 0, total: 0 };
-      done += stat.done;
-      total += stat.total;
-      byIndicator.push({
+    const approvalRows = db
+      .prepare(`SELECT indicator_id, status, comment, updated_at FROM approvals WHERE leader = ? AND discipline = ?`)
+      .all(leaderName, discipline);
+    const approvalMap = {};
+    approvalRows.forEach((r) => {
+      approvalMap[r.indicator_id] = { status: r.status, comment: r.comment, updatedAt: r.updated_at };
+    });
+
+    const byIndicator = relevantIndicators.map((ind) => {
+      const textItems = ind.items
+        .filter((it) => !it.is_list)
+        .map((it) => {
+          const idx = ind.items.indexOf(it);
+          return { label: it.item, value: fieldMap[`${ind.id}:${idx}`] || "" };
+        });
+      const listItem = ind.items.find((it) => it.is_list);
+      const listFiles = listItem ? filesByIndicatorKind[`${ind.id}:list`] || [] : [];
+      const evidenceFiles = filesByIndicatorKind[`${ind.id}:evidence`] || [];
+
+      return {
         id: ind.id,
         l1: ind.l1,
         l2: ind.l2,
         l3: ind.l3,
         owners: ownersFor(ind, discipline),
-        done: stat.done,
-        total: stat.total,
-      });
-      ownersFor(ind, discipline).forEach((person) => {
-        if (!byPerson[person]) byPerson[person] = { done: 0, total: 0, indicatorCount: 0 };
-        byPerson[person].done += stat.done;
-        byPerson[person].total += stat.total;
-        byPerson[person].indicatorCount += 1;
-      });
+        textItems,
+        listLabel: listItem ? listItem.item : null,
+        listFiles,
+        evidenceFiles,
+        approval: approvalMap[ind.id] || null,
+      };
     });
 
     result.disciplines[discipline] = {
       name: DISCIPLINE_NAMES[discipline],
-      overall: { done, total },
-      byPerson,
       byIndicator,
     };
-    result.overall.done += done;
-    result.overall.total += total;
   });
 
   res.json(result);
+});
+
+// Save/update a leader's approval decision (批示意见) for one indicator.
+app.put("/api/leader-approval/:leader/:discipline/:indicatorId", validDiscipline, (req, res) => {
+  const { leader, discipline, indicatorId } = req.params;
+  const { status, comment } = req.body || {};
+
+  if (!["approved", "needs_revision"].includes(status)) {
+    return res.status(400).json({ error: "invalid status" });
+  }
+  if (status === "needs_revision" && (!comment || !comment.trim())) {
+    return res.status(400).json({ error: "comment required for needs_revision" });
+  }
+
+  db.prepare(
+    `INSERT INTO approvals (leader, discipline, indicator_id, status, comment, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(leader, discipline, indicator_id)
+     DO UPDATE SET status = excluded.status, comment = excluded.comment, updated_at = excluded.updated_at`
+  ).run(leader, discipline, indicatorId, status, status === "approved" ? null : comment.trim());
+
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
