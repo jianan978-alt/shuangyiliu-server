@@ -374,6 +374,7 @@ app.get("/api/leader-view/:leader", (req, res) => {
         l1: ind.l1,
         l2: ind.l2,
         l3: ind.l3,
+        desc: ind.desc,
         owners: ownersFor(ind, discipline),
         textItems,
         listLabel: listItem ? listItem.item : null,
