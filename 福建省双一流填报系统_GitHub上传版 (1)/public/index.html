@@ -957,6 +957,8 @@ function LeaderDashboard({ leader, onBack }) {
 
                       {indOpen && (
                         <div style={{ padding: "12px 14px" }}>
+                          {ind.desc && <LeaderIndicatorDesc desc={ind.desc} />}
+
                           {ind.textItems.map((item, idx) => (
                             <div key={idx} style={{ marginBottom: 12 }}>
                               <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2c374d", marginBottom: 3 }}>
@@ -1024,6 +1026,44 @@ function LeaderDashboard({ leader, onBack }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function LeaderIndicatorDesc({ desc }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "#2f5fd9",
+          fontSize: 12.5,
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        {open ? "收起指标说明 ▲" : "查看指标说明 ▼"}
+      </button>
+      {open && (
+        <div
+          style={{
+            marginTop: 8,
+            background: "#f7f9fc",
+            border: "1px solid #eceff3",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontSize: 12.5,
+            color: "#5c6b82",
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.7,
+          }}
+        >
+          {desc}
+        </div>
+      )}
     </div>
   );
 }
