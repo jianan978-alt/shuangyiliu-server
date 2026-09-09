@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS activity_log (
   detail TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Leader approval/批示: one row per (leader, discipline, indicator).
+-- status: 'approved' (同意) | 'needs_revision' (需补充说明)
+CREATE TABLE IF NOT EXISTS approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  leader TEXT NOT NULL,
+  discipline TEXT NOT NULL,
+  indicator_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('approved','needs_revision')),
+  comment TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(leader, discipline, indicator_id)
+);
 `);
 
 module.exports = db;
