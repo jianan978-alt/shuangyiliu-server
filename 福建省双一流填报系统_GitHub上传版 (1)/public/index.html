@@ -832,6 +832,7 @@ function LeaderSelect({ onSelect, onBack }) {
 function LeaderDashboard({ leader, onBack }) {
   const [data, setData] = useState(null);
   const [expandedDiscipline, setExpandedDiscipline] = useState("chem");
+  const [expandedIndicator, setExpandedIndicator] = useState(null);
 
   const reload = useCallback(() => {
     fetch(`${API}/api/leader-view/${encodeURIComponent(leader)}`)
@@ -850,8 +851,6 @@ function LeaderDashboard({ leader, onBack }) {
     return <div style={{ padding: 60, textAlign: "center" }}>加载中...</div>;
   }
 
-  const overallPct = data.overall.total ? Math.round((data.overall.done / data.overall.total) * 100) : 0;
-
   return (
     <div
       style={{
@@ -865,7 +864,7 @@ function LeaderDashboard({ leader, onBack }) {
         <button onClick={onBack} style={backBtnStyle}>
           ← 切换领导
         </button>
-        <h2 style={{ margin: 0, fontSize: 20, color: "#1a2540" }}>{leader} · 分管指标进度</h2>
+        <h2 style={{ margin: 0, fontSize: 20, color: "#1a2540" }}>{leader} · 分管指标内容</h2>
         <div style={{ width: 60 }} />
       </div>
 
@@ -873,35 +872,20 @@ function LeaderDashboard({ leader, onBack }) {
         style={{
           background: "linear-gradient(135deg,#1f3a5f,#2f5fd9)",
           borderRadius: 16,
-          padding: "22px 26px",
+          padding: "18px 26px",
           color: "#fff",
           marginBottom: 24,
+          fontSize: 13,
+          opacity: 0.9,
         }}
       >
-        <div style={{ fontSize: 13, opacity: 0.85 }}>两学科合计完成情况（只读视图，不可编辑）</div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 6 }}>
-          <div style={{ fontSize: 30, fontWeight: 800 }}>{overallPct}%</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>
-            {data.overall.done} / {data.overall.total} 项已完成
-          </div>
-        </div>
-        <div style={{ marginTop: 10 }}>
-          <div style={{ height: 8, background: "rgba(255,255,255,0.25)", borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ width: `${overallPct}%`, height: "100%", background: "#fff", borderRadius: 8 }} />
-          </div>
-        </div>
+        只读视图（不可编辑）— 可直接查看两个学科分管指标下老师填报的具体内容与上传的材料
       </div>
 
       {DISCIPLINES.map((d) => {
         const disc = data.disciplines[d.id];
         if (!disc) return null;
-        const pct = disc.overall.total ? Math.round((disc.overall.done / disc.overall.total) * 100) : 0;
         const isOpen = expandedDiscipline === d.id;
-        const personList = Object.entries(disc.byPerson).sort((a, b) => {
-          const ra = a[1].total ? a[1].done / a[1].total : 0;
-          const rb = b[1].total ? b[1].done / b[1].total : 0;
-          return ra - rb;
-        });
 
         return (
           <div
@@ -923,110 +907,296 @@ function LeaderDashboard({ leader, onBack }) {
                 justifyContent: "space-between",
                 padding: "16px 20px",
                 cursor: "pointer",
-                background: pct === 100 ? "#f4faf6" : "#fff",
+                background: "#fff",
               }}
             >
               <div style={{ fontSize: 16, fontWeight: 700, color: "#1a2540" }}>{disc.name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 12, color: pct === 100 ? "#1a8a4a" : "#5c6b82" }}>
-                    {disc.overall.done}/{disc.overall.total} · {pct}%
-                  </div>
-                  <div style={{ width: 100, marginTop: 3 }}>
-                    <ProgressBar pct={pct} height={6} />
-                  </div>
-                </div>
+                <div style={{ fontSize: 12.5, color: "#8a94a6" }}>共 {disc.byIndicator.length} 项指标</div>
                 <span style={{ fontSize: 13, color: "#8a94a6" }}>{isOpen ? "▲" : "▼"}</span>
               </div>
             </div>
 
             {isOpen && (
               <div style={{ padding: "0 20px 20px" }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#5c6b82", margin: "10px 0" }}>
-                  按负责人查看
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-                  {personList.map(([person, stat]) => {
-                    const ppct = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
-                    return (
+                {disc.byIndicator.map((ind) => {
+                  const key = `${d.id}:${ind.id}`;
+                  const indOpen = expandedIndicator === key;
+                  return (
+                    <div
+                      key={ind.id}
+                      style={{
+                        border: "1px solid #eceff3",
+                        borderRadius: 10,
+                        marginBottom: 10,
+                        overflow: "hidden",
+                      }}
+                    >
                       <div
-                        key={person}
+                        onClick={() => setExpandedIndicator(indOpen ? null : key)}
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 14,
+                          justifyContent: "space-between",
+                          padding: "12px 14px",
+                          cursor: "pointer",
                           background: "#f7f9fc",
-                          border: "1px solid #eceff3",
-                          borderRadius: 10,
-                          padding: "10px 14px",
                         }}
                       >
-                        <div style={{ width: 80, fontWeight: 700, color: "#1a2540", fontSize: 13.5, flexShrink: 0 }}>
-                          {person}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <ProgressBar pct={ppct} height={7} />
-                        </div>
-                        <div
-                          style={{
-                            width: 110,
-                            textAlign: "right",
-                            fontSize: 12.5,
-                            color: ppct === 100 ? "#1a8a4a" : "#5c6b82",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {stat.done}/{stat.total} · {ppct}%
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#5c6b82", margin: "10px 0" }}>
-                  按指标查看
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {disc.byIndicator.map((ind) => {
-                    const ipct = ind.total ? Math.round((ind.done / ind.total) * 100) : 0;
-                    return (
-                      <div
-                        key={ind.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 12,
-                          padding: "8px 4px",
-                          borderBottom: "1px solid #f0f2f6",
-                          fontSize: 12.5,
-                        }}
-                      >
-                        <div style={{ flex: 1, color: "#2c374d" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ color: "#a3adbd", fontSize: 11 }}>
                             {ind.l1} · {ind.l2}
                           </div>
-                          {ind.l3}
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: "#2c374d" }}>{ind.l3}</div>
                         </div>
-                        <div style={{ color: "#8a94a6", flexShrink: 0 }}>{ind.owners.join("、") || "—"}</div>
-                        <div
-                          style={{
-                            width: 70,
-                            textAlign: "right",
-                            color: ipct === 100 ? "#1a8a4a" : "#5c6b82",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {ind.done}/{ind.total}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                          <div style={{ fontSize: 12, color: "#8a94a6" }}>{ind.owners.join("、") || "—"}</div>
+                          <span style={{ fontSize: 12, color: "#8a94a6" }}>{indOpen ? "▲" : "▼"}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+
+                      {indOpen && (
+                        <div style={{ padding: "12px 14px" }}>
+                          {ind.textItems.map((item, idx) => (
+                            <div key={idx} style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2c374d", marginBottom: 3 }}>
+                                {item.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  color: item.value ? "#3a4358" : "#c2c8d2",
+                                  whiteSpace: "pre-wrap",
+                                  background: "#fafbfc",
+                                  border: "1px solid #eef0f4",
+                                  borderRadius: 6,
+                                  padding: "6px 10px",
+                                }}
+                              >
+                                {item.value || "（未填写）"}
+                              </div>
+                            </div>
+                          ))}
+
+                          {ind.listLabel && (
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2c374d", marginBottom: 3 }}>
+                                {ind.listLabel}
+                                <span
+                                  style={{
+                                    fontSize: 10.5,
+                                    fontWeight: 500,
+                                    color: "#2f5fd9",
+                                    background: "#eaf0ff",
+                                    borderRadius: 4,
+                                    padding: "1px 6px",
+                                    marginLeft: 6,
+                                  }}
+                                >
+                                  清单
+                                </span>
+                              </div>
+                              <LeaderFileList files={ind.listFiles} empty="尚未上传清单文件" />
+                            </div>
+                          )}
+
+                          <div>
+                            <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2c374d", marginBottom: 3 }}>
+                              佐证材料
+                            </div>
+                            <LeaderFileList files={ind.evidenceFiles} empty="尚未上传佐证材料" />
+                          </div>
+
+                          <ApprovalSection
+                            leader={leader}
+                            discipline={d.id}
+                            indicatorId={ind.id}
+                            approval={ind.approval}
+                            onSaved={reload}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ApprovalSection({ leader, discipline, indicatorId, approval, onSaved }) {
+  const [showCommentBox, setShowCommentBox] = useState(approval?.status === "needs_revision");
+  const [comment, setComment] = useState(approval?.comment || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setShowCommentBox(approval?.status === "needs_revision");
+    setComment(approval?.comment || "");
+    setError("");
+  }, [approval?.status, approval?.comment, indicatorId]);
+
+  const saveApproval = async (status, commentValue) => {
+    if (status === "needs_revision" && !(commentValue || "").trim()) {
+      setError("请填写具体需要补充的内容");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const r = await fetch(
+        `${API}/api/leader-approval/${encodeURIComponent(leader)}/${discipline}/${indicatorId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, comment: commentValue }),
+        }
+      );
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setError(data.error === "comment required for needs_revision" ? "请填写具体需要补充的内容" : "保存失败，请重试");
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch (e) {
+      setError("保存失败，请检查网络");
+    }
+    setSaving(false);
+  };
+
+  const isApproved = approval?.status === "approved";
+  const isNeedsRevision = approval?.status === "needs_revision";
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        paddingTop: 12,
+        borderTop: "1px dashed #e6e9ef",
+      }}
+    >
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2c374d", marginBottom: 8 }}>批示意见</div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: showCommentBox ? 8 : 0 }}>
+        <button
+          onClick={() => {
+            setShowCommentBox(false);
+            saveApproval("approved", null);
+          }}
+          disabled={saving}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: isApproved ? "1.5px solid #1a8a4a" : "1px solid #d7dce5",
+            background: isApproved ? "#f0faf3" : "#fff",
+            color: isApproved ? "#1a8a4a" : "#3a4358",
+            fontWeight: isApproved ? 700 : 500,
+            fontSize: 13,
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {isApproved ? "✓ 同意" : "同意"}
+        </button>
+        <button
+          onClick={() => setShowCommentBox(true)}
+          disabled={saving}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: isNeedsRevision ? "1.5px solid #c2820a" : "1px solid #d7dce5",
+            background: isNeedsRevision ? "#fff8ec" : "#fff",
+            color: isNeedsRevision ? "#c2820a" : "#3a4358",
+            fontWeight: isNeedsRevision ? 700 : 500,
+            fontSize: 13,
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {isNeedsRevision ? "✓ 需补充说明" : "需补充说明"}
+        </button>
+      </div>
+
+      {showCommentBox && (
+        <div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="请填写具体需要补充或说明的内容..."
+            rows={2}
+            style={{
+              width: "100%",
+              border: "1px solid #dde2ea",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontSize: 13,
+              fontFamily: "inherit",
+              boxSizing: "border-box",
+              resize: "vertical",
+              outline: "none",
+              marginBottom: 6,
+            }}
+          />
+          <button
+            onClick={() => saveApproval("needs_revision", comment)}
+            disabled={saving}
+            style={{
+              padding: "6px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: "#c2820a",
+              color: "#fff",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: saving ? "default" : "pointer",
+            }}
+          >
+            {saving ? "保存中..." : "保存意见"}
+          </button>
+        </div>
+      )}
+
+      {error && <div style={{ color: "#c23b3b", fontSize: 12, marginTop: 6 }}>{error}</div>}
+
+      {approval?.updatedAt && (
+        <div style={{ fontSize: 11, color: "#a3adbd", marginTop: 6 }}>最近更新：{approval.updatedAt}</div>
+      )}
+    </div>
+  );
+}
+
+function LeaderFileList({ files, empty }) {
+  if (!files || files.length === 0) {
+    return <div style={{ fontSize: 12.5, color: "#c2c8d2" }}>{empty}</div>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {files.map((f) => (
+        <div
+          key={f.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 12.5,
+            background: "#fafbfc",
+            border: "1px solid #eef0f4",
+            borderRadius: 6,
+            padding: "5px 10px",
+          }}
+        >
+          <span>📎</span>
+          <a href={f.url} target="_blank" rel="noreferrer" style={{ color: "#2f5fd9", flex: 1, textDecoration: "none", wordBreak: "break-all" }}>
+            {f.name}
+          </a>
+          {f.uploadedBy && <span style={{ color: "#a3adbd", fontSize: 11 }}>{f.uploadedBy} 上传</span>}
+        </div>
+      ))}
     </div>
   );
 }
